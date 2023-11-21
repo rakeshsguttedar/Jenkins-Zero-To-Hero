@@ -21,7 +21,7 @@ pipeline {
     }
     stage('Static Code Analysis') {
       environment {
-        SONAR_URL = "http://192.168.0.119:9000" // change this IP address to Sonar Server machine IP
+        SONAR_URL = "http://192.168.0.110:9000" // change this IP address to Sonar Server machine IP
       }
       steps {
         sh 'echo "running sonarqube static code check"'
