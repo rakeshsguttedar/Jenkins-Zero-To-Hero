@@ -1,0 +1,365 @@
+==================================================
+Deployment of Springboot application using Argo CD
+==================================================
+
+Based on 
+Abhishek Veeramalla's : Zero to Hero - Implementation of Ultimate CI CD pipeline
+Link to youtube video: https://youtu.be/JGQI5pkK82w?si=0DBQeZ7l0c-Mks5n
+
+CI/CD is the process of Continuous Integration and Continuous Delivery 
+where most of the processes are automated and configured to be run on a
+pipeline.
+
+Here we are going to focus mainly on Continuous Delivery.
+We are going to deplay Java Springboot application using 
+minikube kubernetes cluster and Argo CD.
+
+Concepts:
+---------
+Argo CD is a gitops based tool to manage the applications inside 
+a Kubernetes cluster. A gitops based tool uses git as a single source of truth and
+it will update the application inside the kubernetes cluster by watching for changes
+in the manifests files in the git repository. Git tools use declarative approach. 
+That means whatever is declared in the deployment manifest files in the git, the same 
+declared state is maintained in the Kubernetes cluster.
+Argo CD does continuous reconciliation, an another property of a gitops.
+That means, if there is any change in the current live status of the cluster, Argo CD 
+maintains the state of the cluster based on the declared state in the deployment
+manifests stored in the git repo. Reconciliation is done if there are any in-consistencies.
+
+Concepts in the context of the current project:
+-----------------------------------------------
+We are deploying a spring boot application inside a kubernetes cluster based on the 
+deployment manifests that is stored in the application manifest git repository.
+What Argo CD does  is, it will watch for changes in the application manifest that are 
+stored in the git repository /git folder. If thete is any change in the
+deployment yaml manifest, Argo CD will sync the changes to the Kubernetes cluster.
+Changes to the application manifests in the git repository is done during 
+the Continuous Integration phase of the CI/CD process for this application.
+
+Any other changes outside of the git repository is overridden by Argo CD. That means
+even if you or some malicious user manually update the Kubernetes cluster by changing the 
+name or any values of the application, Argo CD will trigger automatic reconciliation 
+and revert the changes back to the state that is desired as per application manifests 
+stored in the git repo.
+
+With reference to our spring boot aplication, the deployment manifest file is stored 
+@ https://github.com/your-rep/Jenkins-Zero-To-Hero/java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+
+Changes to this repository is done at the end of the CI process. CI process is done through Jenkins CI/CD Pipeline.
+Argo CD watches this repository and will be triggered to update the application in the Kubernetes cluster
+immediately after some change is done to the above repository by the CI process.
+
+
+# PREREQUISITES
+===============
+You can setup the continuous delivery project in windows or linux or mac.
+Here we are going to set up on Ubuntu Linux VM running on windows 10. 
+
+# In case you are planning to setup the project on your linux virtual machine,
+# increase the memmory of the Ubuntu linux VM to 5120 MB. 
+# Note: Your machine will become unresponsive if it has less memory.
+
+
+1. INSTALLING MINIKUBE
+======================
+
+# start with a new base directory
+----------------------------------
+ mkdir cicd-demo
+ cd  cicd-demo
+
+
+ curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube_latest_amd64.deb
+ sudo dpkg -i minikube_latest_amd64.deb
+
+Start minikube cluster
+----------------------
+ minikube start --memory=4096
+ # for mac or windows, use flag --driver=hyperkit 
+ minikube status
+
+
+2. INSTALLING ARGOCD USING OPERATORS
+====================================
+Installing argocd has 2 steps. 
+
+ a. Install OLM - operator lifecycle management
+ b. Install argocd operator
+
+ a. Install OLM [time consuming process.proceed with other tasks ]
+ -----------------------------------------------------------------------------
+  curl -sL https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.26.0/install.sh | bash -s v0.26.0
+
+ b. Install argocd operator
+ --------------------------
+  kubectl create -f https://operatorhub.io/install/argocd-operator.yaml
+
+
+check the services and pods installed 
+-------------------------------------
+[time consuming process, proceed with other tasks ]
+
+ kubectl get csv -n operators
+ kubectl get svc
+ kubectl get pods
+ kubectl get pods -n operators
+
+
+3. DEPLOY ARGOCD APPLICATION 
+============================
+ vim argocd-basic.yml
+
+# paste the below text to argocd-basic.yml file
+
+apiVersion: argoproj.io/v1alpha1
+kind: ArgoCD
+metadata:
+  name: example-argocd
+  labels:
+    example: basic
+spec: {}
+
+# deploy using this command
+ kubectl apply -f argocd-basic.yml
+
+check pods and services:
+------------------------
+[time consuming process, proceed with other tasks in the mean time]
+
+ kubectl get pods
+ kubectl get svc
+ kubectl get pods -n operators
+
+ kubectl get svc
+
+# output
+  NAME                            TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)                      AGE
+  example-argocd-metrics          ClusterIP   10.98.243.194    <none>        8082/TCP                     3h6m
+  example-argocd-redis            ClusterIP   10.111.19.24     <none>        6379/TCP                     3h6m
+  example-argocd-repo-server      ClusterIP   10.111.47.223    <none>        8081/TCP,8084/TCP            3h6m
+  example-argocd-server           ClusterIP   10.106.164.219   <none>        80/TCP,443/TCP               3h6m
+  example-argocd-server-metrics   ClusterIP   10.100.154.19    <none>        8083/TCP                     3h6m
+  kubernetes                      ClusterIP   10.96.0.1        <none>        443/TCP                      4h21m
+
+ kubectl get pods -n operators
+# output:
+  NAME                                                 READY   STATUS    RESTARTS      AGE
+  argocd-operator-controller-manager-ff4cd94d5-5sdpk   2/2     Running   2 (85s ago)   3h37m
+
+# Check the pods are running
+--------------------------
+ kubectl get pods -n operators
+ kubectl get pods --output=wide
+
+
+4. CHANGE SERVICE TYPE TO NODEPORT
+===================================
+ kubectl edit svc example-argocd-server 
+
+# clusterIP to NodePort
+
+# check example-argocd-server is assigned NodePort IP and port
+--------------------------------------------------------------
+ minikube service list
+
+# output
+
+|----------------------|----------------------------------------------------|--------------|---------------------------|
+|      NAMESPACE       |                        NAME                        | TARGET PORT  |            URL            |
+|----------------------|----------------------------------------------------|--------------|---------------------------|
+| default              | example-argocd-metrics                             | No node port |                           |
+| default              | example-argocd-redis                               | No node port |                           |
+| default              | example-argocd-repo-server                         | No node port |                           |
+| default              | example-argocd-server                              | http/80      | http://192.168.49.2:31836 |
+|                      |                                                    | https/443    | http://192.168.49.2:32755 |
+| default              | example-argocd-server-metrics                      | No node port |                           |
+| default              | kubernetes                                         | No node port |                           |
+| kube-system          | kube-dns                                           | No node port |                           |
+| kubernetes-dashboard | dashboard-metrics-scraper                          | No node port |                           |
+| kubernetes-dashboard | kubernetes-dashboard                               | No node port |                           |
+| olm                  | operatorhubio-catalog                              | No node port |                           |
+| olm                  | packageserver-service                              | No node port |                           |
+| operators            | argocd-operator-controller-manager-metrics-service | No node port |                           |
+|----------------------|----------------------------------------------------|--------------|---------------------------|
+
+
+5. ACCESSING THE Argo CD using ITS WEB INTERFACE UI
+===================================================
+
+For accessing Argo CD using its web inetrface UI, we need to to login to the Argo CD from 
+within the machine that is running the Kubernetes cluster. It is not possible to access 
+ArgoCD using its Web Interfave UI from outside the machine. This is because the Argo CD service
+is running in a different subnet.
+
+Therefore we can use Argo CD CLI to create and manage applications inside the Kubernetes
+cluster.
+
+Go to a web browser and access it using 
+http://192.168.49.2:32755
+
+
+6.INSTALLING ARGO CD CLI 
+========================
+Refer the ArgoCD docs @ URL: 
+https://argo-cd.readthedocs.io/en/stable/user-guide/commands/argocd/
+
+ curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/download/v2.9.1/argocd-linux-amd64
+ sudo install -m 555 agocd-linux-amd64 /usr/local/bin/argocd
+ rm argocd-linux-amd64
+
+# logout if you have not lot logged out during last login
+----------------------------------------------------------
+ argocd logout 192.168.49.2:32755 
+
+# Getting the login password of argocd service
+----------------------------------------------
+ kubectl get secret
+ kubectl edit secret example-argocd-cluster
+ echo password | base64 -d # output nOisnotactualpasswordE9BfuIWSYmU
+
+# login to the argocd server
+----------------------------
+ argocd login 192.168.49.2:32755 --username admin # paste the password obtained by above commands
+
+# Check orgocd Version
+=======================
+
+ argocd version
+
+# output 
+
+argocd: v2.9.1+58b04e5
+  BuildDate: 2023-11-14T15:40:46Z
+  GitCommit: 58b04e5e11d007b0518853029ff7612c24a2eb35
+  GitTreeState: clean
+  GoVersion: go1.21.3
+  Compiler: gc
+  Platform: linux/amd64
+argocd-server: v2.7.6+00c914a.dirty
+  BuildDate: 2023-06-20T20:51:13Z
+  GitCommit: 00c914a948d9e8ad99be8bd82a368fbdeba12f88
+  GitTreeState: dirty
+  GoVersion: go1.19.10
+  Compiler: gc
+  Platform: linux/amd64
+  Kustomize Version: v5.0.1 2023-03-14T01:32:48Z
+  Helm Version: v3.11.2+g912ebc1
+  Kubectl Version: v0.24.2
+  Jsonnet Version: v0.19.1
+
+# Check if there is any application managed by argocd
+-----------------------------------------------------
+ argocd app list
+# output
+ NAME  CLUSTER  NAMESPACE  PROJECT  STATUS  HEALTH  SYNCPOLICY  CONDITIONS  REPO  PATH  TARGET
+ # no application listed here - only header
+
+
+7. CREATE THE APPLICATION USING ARGOD CLI
+=========================================
+
+# note down the parameters
+--------------------------
+application name: 			test
+project name: 				default
+sync: 						automatic
+source repository url: 		https://github.com/your-repo/Jenkins-Zero-To-Hero
+path of the deploment file: java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests
+destination cluster url: 	https://kubernetes.default.svc
+namespace: 					default
+
+# actual command to create an application
+-----------------------------------------
+ argocd app create test --project default --sync-policy auto --repo https://github.com/your-repo/Jenkins-Zero-To-Hero --path   java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests --dest-namespace default --dest-server https://kubernetes.default.svc
+
+# check whether the application is deployed:
+--------------------------------------------
+ kubectl get deploy
+
+# check whether pods are running:
+----------------------------------
+ kubectl get pods
+
+edit the image url
+------------------
+ kubectl edit deploy spring-boot-app
+
+# check the diff between live state and taregt state (desired state)
+--------------------------------------------------------------------- 
+ argocd app diff test
+
+===== apps/Deployment default/spring-boot-app ======
+133c133
+<       - image: abhishekf5/ultimate-cicd
+---
+>       - image: abhishekf5/ultimate-cicd:replaceImageTag
+
+The argocd should automatically sync to the target state (desired state).
+The default polling interval is 3 minutes (180 seconds). You can change the setting by updating the 
+timeout.reconciliation value in the argocd-cm config map.
+
+But it is not happening because of the reasons mentioned in argocd FAQs.
+read argocd FAQs here @: https://argo-cd.readthedocs.io/en/stable/faq/
+Therefore we manually sync using argocd app sync [APPNAME] command. 
+
+
+8. MANUALLY SYNC THE ARGOCD STATE 
+==================================
+
+ argocd app sync test
+
+# output: 
+
+  TIMESTAMP                  GROUP        KIND   NAMESPACE                  NAME       STATUS    HEALTH            HOOK  MESSAGE
+  2023-11-20T16:22:07+00:00            Service     default  spring-boot-app-service    Synced   Healthy
+  2023-11-20T16:22:07+00:00   apps  Deployment     default       spring-boot-app     OutOfSync  Progressing
+  2023-11-20T16:22:14+00:00            Service     default  spring-boot-app-service    Synced   Healthy                  service/spring-boot-app-service unchanged
+  2023-11-20T16:22:14+00:00   apps  Deployment     default       spring-boot-app     OutOfSync  Progressing              deployment.apps/spring-boot-app configured
+  2023-11-20T16:22:14+00:00   apps  Deployment     default       spring-boot-app    Synced  Progressing              deployment.apps/spring-boot-app configured
+
+  Name:               default/test
+  Project:            default
+  Server:             https://kubernetes.default.svc
+  Namespace:          default
+  URL:                https://example-argocd-server/applications/test
+  Repo:               https://github.com/your-repo/Jenkins-Zero-To-Hero
+  Target:
+  Path:               java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests
+  SyncWindow:         Sync Allowed
+  Sync Policy:        Automated
+  Sync Status:        Synced to  (8267bad)
+  Health Status:      Healthy
+
+  Operation:          Sync
+  Sync Revision:      8267bade15e24a481fb1a6ee400c2d8650bd6e55
+  Phase:              Succeeded
+  Start:              2023-11-20 16:22:06 +0000 UTC
+  Finished:           2023-11-20 16:22:14 +0000 UTC
+  Duration:           8s
+  Message:            successfully synced (all tasks run)
+
+  GROUP  KIND        NAMESPACE  NAME                     STATUS  HEALTH   HOOK  MESSAGE
+         Service     default    spring-boot-app-service  Synced  Healthy        service/spring-boot-app-service unchanged
+  apps   Deployment  default    spring-boot-app          Synced  Healthy        deployment.apps/spring-boot-app configured
+
+# after this sync, check argocd has corrected the image version in for the application 
+--------------------------------------------------------------------------------------
+ argocd app diff test # this command shoud not return anything
+
+ kubectl edit deploy spring-boot-app # to check whether deploy yaml manifests is in sync with git repo.
+
+# To access the spring boot application that is running inside the kubernetes cluster
+# 
+ minikube service spring-boot-app-service
+
+# The above command will open the service by making it accessible through a web browser or curl command
+ curl  http://192.168.49.2:30385
+
+9. CLEAN UP
+============
+
+ argocd app delete test
+ argocd logout 192.168.49.2:32222
+
+# delete the kubernetes cluster using minikube and kubectl commands.

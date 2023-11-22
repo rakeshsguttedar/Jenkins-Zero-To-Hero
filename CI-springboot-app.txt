@@ -1,0 +1,305 @@
+=============================================================================
+		CI - Continuous Integration of Spring boot application
+==============================================================================
+
+Based on:
+
+Abhishek Veeramalla's : Zero to Hero - Implementation of Ultimate CI CD pipeline
+Link to youtube video: https://youtu.be/JGQI5pkK82w?si=0DBQeZ7l0c-Mks5n
+
+CI/CD is the process of Continuous integration and continuous delivery 
+where most of the processes are automated and configured to be run on a
+pipeline.
+
+Here we are going to focus mainly on CI i.e. Continuos Integration.
+We are going to integrate Spring boot Java application using Jenkins, 
+Maven and Sonarqube server.
+
+# PREREQUISITES
+===============
+ a. Linux machine or Ubuntu VM to test the applications locally on your machine 
+   (before running the setup on AWS EC2 instance.)
+ b. AWS Account
+
+Below are the tasks from 1 to 9 that can be run on your local machine or
+on the AWS EC2 instance.
+
+Note: replace ec2-instance-public-ip with localhost for accessing 
+      the endpoints on your local setup or within an EC2 instance.
+
+~~~~~~~~~~~~~
+Tasks 1 to 10
+~~~~~~~~~~~~~
+
+1. CLONE AND UPDATE THE THE SOURCE CODE REPO
+=============================================
+
+Go to Github and fork the repository of Abhishek Veeramala.
+Note: star it for receiving notifications upon any changes to the repository.
+
+Link to the repo: https://github.com/iam-veeramalla/Jenkins-Zero-To-Hero/
+Fork this repo to your github account.
+
+Clone the repository from your git repo in your local setup.
+
+ git clone https://github.com/your-repo/Jenkins-Zero-To-Hero.git
+
+Update JenkinsFile 
+------------------
+You have to edit the JenkinsFile to change the variable values for 
+SONAR_URL, DOCKER_IMAGE, GIT_USER_NAME, git config user.email and 
+git config user.name.
+
+ cd your-repo/java-maven-sonar-argocd-helm-k8s/spring-boot-app 
+ vim JenkinsFile
+
+SONAR_URL = "http://ec2-instance-public-ip:9000"
+# replace text ec2-instance-public-ip with the public IP address 
+  of EC2 instance or your local machine IP on which sonarqube 
+  will be installed.
+
+DOCKER_IMAGE = "abhishekf5/ultimate-cicd:${BUILD_NUMBER}"
+# change abhishek5 to your docker hub username
+
+GIT_USER_NAME = "iam-veeramalla"
+# change github username to your github account username.
+
+Accordingly change these value:
+
+git config user.email "abhishek.xyz@gmail.com"
+git config user.name "Abhishek Veeramalla"
+
+Then commit and push these changes to your github repository.
+
+2. INSTALLATION OF JAVA AND JENKINS
+===================================
+ sudo apt update
+ sudo apt install openjdk-11-jre
+
+# To verify whether Java is installed, you may run:  java -version
+
+# Now, you can proceed with installing Jenkins using below commands:
+
+ curl -fsSL https://pkg.jenkins.io/debian/jenkins.io-2023.key | sudo tee \
+   /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+ echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
+   https://pkg.jenkins.io/debian binary/ | sudo tee \
+   /etc/apt/sources.list.d/jenkins.list > /dev/null
+
+ sudo apt install jenkins
+
+Now login to the Jenkins and configure Jenkins using below steps:
+-----------------------------------------------------------------
+# Access Jenkins Server through a web browser using below URL. 
+# Do replace text 'ec2-instance-public-ip' with the public IP of EC2 instance 
+  or localhost if accessing it within the instance or local machine.
+
+http://ec2-instance-public-ip:8080 
+
+ -> Login with user: admin
+# for paasword: 
+ 
+ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+ 
+ # save the password in a text file.It is needed for 
+ # next set of logins that happen after restarts of Jenkins server.
+
+ -> Install suggested Plugins
+# Note: You may skip Jenkins user account creation for EC2 instance as it for demmo 
+        purpose only. In production, we have to configure this user account.
+
+3. INSTALL DOCKER PIPELINE AND SONARQUBE PLUGINS
+=================================================
+Go to Jenkins page @ http://ec2-instance-public-ip:8080
+
+# -> Manage Jenkins -> Manage plugins -> Available Plugins -> docker pipeline # dont restart
+# -> Manage Jenkins -> Manage plugins -> Available Plugins -> sonarqube scan  # dont restart
+
+4. INSTALL DOCKER
+=================
+ sudo apt install docker.io
+ sudo su - 
+ usermod -aG docker jenkins
+ usermod -aG docker ubuntu
+ systemctl restart docker
+
+Restarting Jenkins
+------------------
+
+# to restart Jenkins server, run the below url in a web browser.
+
+http://ec2-instance-public-ip:8080/restart
+
+# Do replace text 'ec2-instance-public-ip' with the public IP of EC2 instance or localhost
+ 
+After restart, Login to Jenkins using admin user and password as copied earlier by command:
+ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+
+Add the dockerhub credentials in Jenkins
+----------------------------------------
+# For Jenkins to authenticate with your dockerhub registry account, 
+# add your docker hub credentials to the Jenkins server.
+
+Go to Jenkins page -> Manage Credentials -> system -> global credentials -> Add Credentials 
+  -> Kind : username and password -> password -> your-dockerhub-password -> Enter ID: docker-cred
+
+
+5. INSTALL MAVEN (NOT REQUIRED ON EC2 INSTANCE. ONLY FOR TESTING ON LOCAL SETUP)
+================================================================================
+
+ sudo apt update
+ sudo apt install maven
+
+# Execute the Maven targets to generate the artifacts
+
+ mvn clean package
+ 
+# The above maven target stroes the artifacts to the `target` directory. You can either execute 
+# the artifact on your local machine (or) run it as a Docker container.
+# ** Note: To avoid issues with local setup, Java versions and other dependencies, Please go docker way. **
+
+# Execute locally (Java 11 needed) and access the application on http://localhost:8080
+#   Do make sure your that the Jenkins server is stopped till the testing of the application. 
+#   This is because as Jenins and springboot app use same port i.e. 8080
+
+ java -jar target/spring-boot-web.jar
+
+
+6. DOCKER WAY: (NOT REQUIRED ON EC2 INSTANCE. ONLY FOR TESTING ON LOCAL SETUP)
+==============================================================================
+# Build the spring boot application docker image
+ 
+ docker build -t ultimate-cicd-pipeline:v1 .
+
+# run the spring boot application docker image in docker container
+ 
+ docker run -d -p 8010:8080 -t ultimate-cicd-pipeline:v1
+
+## Now access the application that is running as a conatainer 
+## From outside Linux/VM/EC2 instance, go to:
+   http://<public-ip-address>:8010 or  
+## If within EC2 instance or local machine, then go to: 
+   http://localhost:8010
+
+
+7. INSTALLING AND CONFIGURING SONARQUBE
+========================================
+
+ apt install unzip
+ adduser sonarqube # enter any password
+ sudo su - sonarqube # login to sonarqube account
+ wget https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-9.4.0.54424.zip
+ unzip * # extract the zip file
+ rm sonarqube-9.4.0.54424.zip
+ chmod -R 755 /home/sonarqube/sonarqube-9.4.0.54424 
+ chown -R sonarqube:sonarqube /home/sonarqube/sonarqube-9.4.0.54424
+ cd sonarqube-9.4.0.54424/bin/linux-x86-64/
+ ./sonar.sh start 
+
+# Access sonarqube through a web browser using URL: 
+  http://localhost:9000
+  username: admin -> password: admin
+# update password for sonarqube: 
+  username: admin -> password: admin123 -> retype password: admin123
+
+create access token in Sonarqube (needed for Jenkins to authenticate with Sonarqube)
+-------------------------------------------------------------------------------------
+
+Go to sonarqube -> click on My Account ( top rightmost corner click on A )
+-> click on security -> Type jenkins in Generate Token Field -> click on Generate
+-> click on copy button and save this token it in a text file 
+(you wont be able to see it again)
+
+sonarqube access token:
+replacethistextwithsonarqubeaccesstoken
+
+Add the sonarqube token in Jenkins
+-----------------------------------
+# For Jenkins to authenticate with the sonarqube server account, 
+# add the access token to the Jenkins server.
+
+Go to Jenkins page -> Manage Credentials -> system -> global credentials -> Add Credentials 
+->select Kind : Secret Text -> copy paste the sonarqube access token -> Enter ID : sonarqube
+
+8. GENERATE/USE GITHUB ACCESS TOKEN 
+====================================
+
+Go to your github account - Click on settings - > click on Developer Settings
+( on the left side below at the end ) ->  Click on Personal Access Token ->
+Tokens (classic) -> select and click Generate new token (classic) ->
+Enter your gituhub login password -> Enter your token name: my-git-token 
+-> expiration : 7 days -> select repo all and other required tick boxes 
+-> click Generate Token
+Very imp: Save this secret token in a separate file and never share this any one. 
+
+github token: 
+replaceitwithyourgithubaccessclassictoken
+
+Add the github credentials in Jenkins
+-------------------------------------
+# For Jenkins to authenticate with your github account, add the git 
+  access token (classic) to the Jenkins server.
+
+Go to Jenkins page -> Manage Credentials -> system -> global credentials -> Add Credentials 
+->select Kind : Secret Text -> copy paste your gituhub access token -> Enter ID : github
+
+9. CREATING AND RUNNING JENKINS PIPELINE JOB
+============================================
+Go to Jeninks page
+http://ec2-instance-public-ip:8080
+
+a. Creating Jenkins Pipeline Job
+--------------------------------
+ Dashboard -> New Item -> Enter "ultimate-cicd-demo" -> select Pipeline -> click OK
+ -> click on Advanced Project Options -> select Pipeline Script from SCM -> select SCM as Git
+ -> Enter Repository URL https://github.com/your-repo/Jenkins-Zero-To-Hero -> Edit Branch specifier 
+ as main or leave as it is for master -> add the path to the JenkinsFile in Script Path 
+ "java-maven-sonar-argocd-helm-k8s/spring-boot-app/JenkinsFile" -> click save
+ 
+ Note: replace text 'your-repo' in the above URL with the name of your git repository.
+
+b. Executing the Jenkins Pipeline
+---------------------------------
+ Dashboard -> Click on Build Now -> wait for few seconds -> click on Status -> 
+ Click on Build Number # -> Click on Console Output ( to view build logs ) 
+
+c. Verifying whether deployment.yml manifests is updated.
+---------------------------------------------------------
+Go to:
+https://github.com/your-repo/Jenkins-Zero-To-Hero/java-maven-sonar-argocd-helm-k8s/spring-boot-app-manifests/deployment.yml
+Look for the value of the key 'image' under spec -> containers. It should be updated with the new image value/tag.
+
+
+10. CONTINUOUS INTEGRATION ON AWS EC2 INSTANCE
+===============================================
+
+Note: The aboce mentioned Tasks 1 to 9 can be executed 
+      on an EC2 instance, except for tasks 5 and 6 which 
+	  are needed only for testing of the local setup.
+
+Create EC2 instance -> Got to AWS account and create an EC2 instance. 
+Note: you will be charged around half a dollar for around 1 to 2 hours,
+      in INR it may be around 40 to 50 rupees. 
+	  So proceed only if all tasks are successfull on your local setup. 
+	  The local setup may help reduce your AWS EC2 instance uptime.
+
+Instance details and steps:
+--------------------------- 
+a. instance type:  t2.large ubuntu image. 
+b. For ssh to this instance, select key or create a new key and save the private key pem 
+   file in youur machine. This will be used to login to the EC2 instance.
+c. Copy the public-IP-address of the EC2 instance. You can ssh to this instance from your terminal.
+   (you can use putty or mobaxterm or git Bash )
+
+# For git bash use this command:
+# (replace the text 'ec2-instance-public-ip' with the public IP of your EC2 instance)
+
+ ssh -i ~aws-kvp.pem ubuntu@ec2-instance-public-ip
+
+After the instance is created, go to Security Settings of the instance and click on 
+Security group -> Edit inbound rules and allow port 8080 for Jenkins server 
+access as Jenkins application will run on port 8080 -> Allow All IPV4. 
+
+Note: You may allow All traffic for testing purpose but it should not be done otherwise.
+
+When all the tasks are done, stop and terminate your EC2 instance.
